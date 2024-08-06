@@ -1,0 +1,22 @@
+{
+  "name": "@state-transition/typewriter",
+  "version": "0.8.0",
+  "description": "State management for typewriter style text generation",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint --max-warnings=0 --fix src",
+    "test": "vitest run --coverage"
+  },
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "@vitest/coverage-v8": "^2.0.4",
+    "vitest": "^2.0.4"
+  }
+}
