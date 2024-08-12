@@ -59,7 +59,7 @@ test('word linear', async () => {
     const pipe = createTypewriterPipeline(
         incoming(),
         {
-            strategy: byWordLinear(0),
+            strategy: byWordLinear(0, {locale: 'zh-Hans'}),
         }
     );
     const result = await streamToArray(pipe);
@@ -70,7 +70,7 @@ test('word eager yield all chunk on pending', async () => {
     const pipe = createTypewriterPipeline(
         incoming(),
         {
-            strategy: byWordEager({defaultInterval: 40, eagerInterval: 10}),
+            strategy: byWordEager({defaultInterval: 40, eagerInterval: 10, locale: 'zh-Hans'}),
         }
     );
     const result = await streamToArray(pipe);
@@ -78,10 +78,11 @@ test('word eager yield all chunk on pending', async () => {
 });
 
 test('word eager await latency on last chunk', async () => {
+    const segment = (value: string) => new Intl.Segmenter('zh-Hans', {granularity: 'word'}).segment(value);
     const pipe = createTypewriterPipeline(
         incoming(40),
         {
-            strategy: byWordEager({defaultInterval: 20, eagerInterval: 10}),
+            strategy: byWordEager({defaultInterval: 20, eagerInterval: 10, segment}),
         }
     );
     const result = await streamToArray(pipe);

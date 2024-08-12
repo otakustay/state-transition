@@ -33,10 +33,32 @@ export function byCharacterLinear(interval: number): TypewriterStrategy {
     };
 }
 
-export function byWordLinear(interval: number): TypewriterStrategy {
+interface SegmentData {
+    segment: string;
+    index: number;
+}
+
+export interface ByWordLocaleOptions {
+    locale: string;
+}
+
+export interface ByWordSegmentOptions {
+    segment: (value: string) => Iterable<SegmentData>;
+}
+
+export type ByWordOptions = ByWordLocaleOptions | ByWordSegmentOptions;
+
+function segment(value: string, options: ByWordOptions) {
+    if ('locale' in options) {
+        return new Intl.Segmenter(options.locale, {granularity: 'word'}).segment(value);
+    }
+
+    return options.segment(value);
+}
+
+export function byWordLinear(interval: number, options: ByWordOptions): TypewriterStrategy {
     return async function* byWordLinearStrategy(chunk) {
-        const segmenter = new Intl.Segmenter('zh-Hans', {granularity: 'word'});
-        const segments = segmenter.segment(chunk.value);
+        const segments = segment(chunk.value, options);
         for (const data of segments) {
             yield data.segment;
             await wait(interval);
@@ -49,10 +71,11 @@ export interface EagerOptions {
     eagerInterval: number;
 }
 
-export function byWordEager({defaultInterval, eagerInterval}: EagerOptions): TypewriterStrategy {
+export type ByWordEagerOptions = EagerOptions & ByWordOptions;
+
+export function byWordEager(options: ByWordEagerOptions): TypewriterStrategy {
     return async function* byWordEagerStrategy(chunk, context) {
-        const segmenter = new Intl.Segmenter('zh-Hans', {granularity: 'word'});
-        const segments = segmenter.segment(chunk.value);
+        const segments = segment(chunk.value, options);
         for (const data of segments) {
             const state = context.getQueueState();
             const remainingChunksCount = state.resolved.length - chunk.index - 1;
@@ -81,7 +104,7 @@ export function byWordEager({defaultInterval, eagerInterval}: EagerOptions): Typ
             // For condition where not that much backpressure, we can still output word by word in a smaller interval
             else {
                 yield data.segment;
-                const interval = remainingChunksCount === 1 ? eagerInterval : defaultInterval;
+                const interval = remainingChunksCount === 1 ? options.eagerInterval : options.defaultInterval;
                 await wait(interval);
             }
         }
