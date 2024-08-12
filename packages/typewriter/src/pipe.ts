@@ -1,14 +1,5 @@
 import {IterationItem, Queue, QueueState} from './queue.js';
 
-async function consumeInput(input: AsyncIterableIterator<string>, queue: Queue) {
-    const cursor = {current: 0};
-    for await (const chunk of input) {
-        queue.put(cursor.current, chunk);
-        cursor.current++;
-    }
-    queue.complete();
-}
-
 interface TypewriterStrategyContext {
     getQueueState: () => QueueState;
 }
@@ -71,28 +62,43 @@ export function byWordEager({defaultInterval, eagerInterval}: EagerOptions): Typ
                 yield chunk.value.slice(data.index);
                 return;
             }
-
+            // When it's the last chunk, we can't expect the next chunk coming soon, so try to be more smooth
+            if (remainingChunksCount === 0 && state.resolved.length > 1) {
+                const lastChunkTime = state.resolved.at(-1)?.time;
+                const firstChunkTime = state.resolved[0].time;
+                const totalTime = lastChunkTime ? (lastChunkTime - firstChunkTime) : /* v8 ignore next */ 0;
+                const totalSize = state.resolved.reduce((sum, chunk) => sum + chunk.value.length, 0);
+                const averageLatencyPerCharacter = totalTime / totalSize;
+                const remainingCharactersCount = chunk.value.length - data.index;
+                const averageChunkSize = totalSize / state.resolved.length;
+                const expectedLatency = averageChunkSize * averageLatencyPerCharacter;
+                const interval = Math.ceil(expectedLatency / remainingCharactersCount);
+                for (const char of data.segment) {
+                    yield char;
+                    await wait(interval);
+                }
+            }
             // For condition where not that much backpressure, we can still output word by word in a smaller interval
-            const interval = remainingChunksCount === 1 ? eagerInterval : defaultInterval;
-            yield data.segment;
-            await wait(interval);
+            else {
+                yield data.segment;
+                const interval = remainingChunksCount === 1 ? eagerInterval : defaultInterval;
+                await wait(interval);
+            }
         }
     };
 }
 
 export async function* createTypewriterPipeline(input: AsyncIterableIterator<string>, options: TypewriterOptions) {
     const queue = new Queue();
-    void consumeInput(input, queue);
-    const cursor = {index: 0};
+    void queue.consume(input);
+
+    const context: TypewriterStrategyContext = {
+        getQueueState: () => queue.getState(),
+    };
 
     for await (const chunk of queue.toIterable()) {
-        const context: TypewriterStrategyContext = {
-            getQueueState: () => queue.getState(),
-        };
         for await (const output of options.strategy(chunk, context)) {
             yield output;
         }
-
-        cursor.index++;
     }
 }

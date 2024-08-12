@@ -1,10 +1,12 @@
 interface QueueItemResolved {
     state: 'resolved';
+    time: number;
     value: string;
 }
 
 interface QueueItemError {
     state: 'error';
+    time: number;
     reason: string;
 }
 
@@ -25,8 +27,13 @@ export interface IterationItem {
     value: string;
 }
 
+interface ResolvedItem {
+    time: number;
+    value: string;
+}
+
 export interface QueueState {
-    resolved: string[];
+    resolved: ResolvedItem[];
     completed: boolean;
 }
 
@@ -38,94 +45,44 @@ function createPendingItem(): QueueItemPending {
     return item as QueueItemPending;
 }
 
-/**
- * A intermediate medium allows to put data and pull them as an async generator.
- */
 export class Queue {
     private chunksCount = -1;
 
+    private cursor = 0;
+
     private readonly queue: Array<QueueItemResolved | QueueItemPending | QueueItemError> = [];
 
-    /**
-     * Put a chunk into current execution.
-     *
-     * @param index The chunk index
-     * @param value The chunk value
-     */
-    put(index: number, value: string) {
-        /* v8 ignore start */
-        if (this.chunksCount >= 0) {
-            return;
+    async consume(input: AsyncIterableIterator<string>) {
+        try {
+            for await (const chunk of input) {
+                this.put(chunk);
+            }
         }
-        /* v8 ignore end */
-
-        const current = this.queue.at(index);
-
-        if (current && current.state === 'pending') {
-            current.resolve({value, done: false});
+        /* v8 ignore next 3 */
+        catch (ex) {
+            this.error(ex instanceof Error ? ex.message : `${ex}`);
         }
-
-        const item: QueueItemResolved = {
-            state: 'resolved',
-            value,
-        };
-        this.queue[index] = item;
-    }
-
-    /**
-     * Mark current execution to an error state.
-     *
-     * @param index The chunk index
-     * @param reason The error reason
-     */
-    error(index: number, reason: string) {
-        /* v8 ignore start */
-        if (this.chunksCount >= 0) {
-            return;
+        finally {
+            this.complete();
         }
-        /* v8 ignore end */
-
-        const current = this.queue.at(index);
-
-        if (current && current.state === 'pending') {
-            current.reject(new Error(reason));
-        }
-
-        const item: QueueItemError = {
-            state: 'error',
-            reason,
-        };
-        this.queue[index] = item;
-    }
-
-    /**
-     * Mark current execution to a complete state.
-     */
-    complete() {
-        this.chunksCount = this.queue.length;
     }
 
     getState(): QueueState {
-        const resolved: string[] = [];
-        for (const item of this.queue) {
-            if (item.state === 'resolved') {
-                resolved.push(item.value);
-            }
-            else {
-                break;
-            }
-        }
-        return {
-            resolved,
+        const state: QueueState = {
+            resolved: [],
             completed: this.chunksCount >= 0,
         };
+        for (const item of this.queue) {
+            /* v8 ignore next 3 */
+            if (item.state !== 'resolved') {
+                break;
+            }
+
+            state.resolved.push({time: item.time, value: item.value});
+        }
+        return state;
     }
 
-    /**
-     * Create an `AsyncIterable` for current execution.
-     *
-     * @returns An `AsyncIterable` object that can iterate over the chunks of current execution.
-     */
     toIterable(): AsyncIterable<IterationItem> {
         return {
             [Symbol.asyncIterator]: (): AsyncIterator<IterationItem> => {
@@ -150,6 +107,7 @@ export class Queue {
 
                     if (item) {
                         switch (item.state) {
+                            /* v8 ignore next 2 */
                             case 'pending':
                                 return item.promise.then(expand);
                             case 'resolved':
@@ -168,5 +126,53 @@ export class Queue {
                 };
             },
         };
+    }
+
+    private put(value: string) {
+        /* v8 ignore start */
+        if (this.chunksCount >= 0) {
+            return;
+        }
+        /* v8 ignore end */
+
+        const current = this.queue.at(this.cursor);
+
+        if (current && current.state === 'pending') {
+            current.resolve({value, done: false});
+        }
+
+        const item: QueueItemResolved = {
+            state: 'resolved',
+            time: Date.now(),
+            value,
+        };
+        this.queue[this.cursor] = item;
+        this.cursor++;
+    }
+
+    private error(reason: string) {
+        /* v8 ignore start */
+        if (this.chunksCount >= 0) {
+            return;
+        }
+        /* v8 ignore end */
+
+        const current = this.queue.at(this.cursor);
+
+        if (current && current.state === 'pending') {
+            current.reject(new Error(reason));
+        }
+
+        const item: QueueItemError = {
+            state: 'error',
+            time: Date.now(),
+            reason,
+        };
+        this.queue[this.cursor] = item;
+        this.cursor++;
+    }
+
+    private complete() {
+        this.chunksCount = this.queue.length;
     }
 }

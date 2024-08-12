@@ -23,6 +23,8 @@ node_modules
 
 # Lerna
 .nx
-
-
 .nx/cache
+
+# Development
+**/play.ts
+**/*.play.ts
