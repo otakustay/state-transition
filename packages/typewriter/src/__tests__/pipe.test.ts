@@ -1,6 +1,10 @@
 import {test, expect, vi} from 'vitest';
-import {byCharacterLinear, createTypewriterPipeline} from '../pipe.js';
-import {byChunk, byWordEager, byWordLinear} from '../index.js';
+import {createTypewriterPipeline} from '../pipe.js';
+import {eager} from '../strategies/eager.js';
+import {linear} from '../strategies/linear.js';
+import {slowLastChunk} from '../strategies/slowLastChunk.js';
+import {toCharacter} from '../strategies/toCharacter.js';
+import {toWord} from '../strategies/toWord.js';
 
 vi.setConfig({testTimeout: 30000});
 
@@ -36,54 +40,71 @@ async function streamToArray(stream: AsyncIterableIterator<string>) {
 test('by chunk', async () => {
     const pipe = createTypewriterPipeline(
         incoming(),
-        {
-            strategy: byChunk(),
-        }
+        []
     );
     const result = await streamToArray(pipe);
     expect(result).toEqual(textChunks);
 });
 
-test('character linear', async () => {
+test('linear', async () => {
     const pipe = createTypewriterPipeline(
         incoming(),
-        {
-            strategy: byCharacterLinear(0),
-        }
+        [linear(10)]
+    );
+    const result = await streamToArray(pipe);
+    expect(result).toEqual(textChunks);
+});
+
+test('to character', async () => {
+    const pipe = createTypewriterPipeline(
+        incoming(),
+        [
+            toCharacter(),
+        ]
     );
     const result = await streamToArray(pipe);
     expect(result).toEqual(textChunks.map(v => v.split('')).flat());
 });
 
-test('word linear', async () => {
+test('to word', async () => {
     const pipe = createTypewriterPipeline(
         incoming(),
-        {
-            strategy: byWordLinear(0, {locale: 'zh-Hans'}),
-        }
+        [
+            toWord({locale: 'zh-Hans'}),
+        ]
     );
     const result = await streamToArray(pipe);
     expect(result.join('')).toBe(textChunks.join(''));
 });
 
-test('word eager yield all chunk on pending', async () => {
+test('to word custom segment', async () => {
     const pipe = createTypewriterPipeline(
         incoming(),
-        {
-            strategy: byWordEager({defaultInterval: 40, eagerInterval: 10, locale: 'zh-Hans'}),
-        }
+        [
+            toWord({segment: v => v.split('')}),
+        ]
     );
     const result = await streamToArray(pipe);
-    expect(result.some(v => v.length > 10)).toBe(true);
+    expect(result).toEqual(textChunks.map(v => v.split('')).flat());
 });
 
-test('word eager await latency on last chunk', async () => {
-    const segment = (value: string) => new Intl.Segmenter('zh-Hans', {granularity: 'word'}).segment(value);
+test('eager flush on pending', async () => {
+    const pipe = createTypewriterPipeline(
+        incoming(),
+        [
+            toCharacter(),
+            linear(40),
+            eager({eagerInterval: 10}),
+        ]
+    );
+    const result = await streamToArray(pipe);
+    expect(result.join('')).toBe(textChunks.join(''));
+});
+
+test('slow last chunk', async () => {
     const pipe = createTypewriterPipeline(
         incoming(40),
-        {
-            strategy: byWordEager({defaultInterval: 20, eagerInterval: 10, segment}),
-        }
+        [slowLastChunk()]
     );
     const result = await streamToArray(pipe);
     expect(result.filter(v => v.length === 1).length).toBeGreaterThan(10);
@@ -97,9 +118,7 @@ test('error', async () => {
 
     const pipe = createTypewriterPipeline(
         incoming(),
-        {
-            strategy: byChunk(),
-        }
+        []
     );
     await expect(streamToArray(pipe)).rejects.toThrow();
 });
