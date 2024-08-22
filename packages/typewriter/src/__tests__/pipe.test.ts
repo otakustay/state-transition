@@ -110,6 +110,24 @@ test('slow last chunk', async () => {
     expect(result.filter(v => v.length === 1).length).toBeGreaterThan(10);
 });
 
+test('slow last chunk default latency', async () => {
+    const pipe = createTypewriterPipeline(
+        incoming(40),
+        [slowLastChunk({defaultLatencyPerCharacter: 0})]
+    );
+    const result = await streamToArray(pipe);
+    expect(result.filter(v => v.length === 1).length).toBeGreaterThan(10);
+});
+
+test('slow last chunk fast yield', async () => {
+    const pipe = createTypewriterPipeline(
+        incoming(),
+        [slowLastChunk({defaultLatencyPerCharacter: 200})]
+    );
+    const result = await streamToArray(pipe);
+    expect(result.filter(v => v.length === 1).length).toBeLessThan(10);
+});
+
 test('error', async () => {
     async function* incoming() {
         yield 'foo';

@@ -66,7 +66,9 @@ This is a mixed strategy that:
 ### slowLastChunk
 
 ```ts
-slowLastChunk();
+slowLastChunk(options?: {defaultLatencyPerCharacter?: number});
 ```
 
 This strategy will slow down the output speed when current chunk is the last one and the stream is not completed yet. It estimates an "average latency" from previous chunks and then yield character by character with this latency. It will stop this behavior when more chunk arrives.
+
+The `defaultLatencyPerCharacter` option is used when the first chunk is in a "slow state" because we don't have enough chunks to compute the average latency, if this option is not provided, the default value will be `0`.

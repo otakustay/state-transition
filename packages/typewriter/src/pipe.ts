@@ -4,7 +4,7 @@ interface StrategyContext {
     getQueueState: () => QueueState;
 }
 
-interface PipeData {
+export interface PipeData {
     value: string;
     index: number;
     latency: number;
